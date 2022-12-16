@@ -1,0 +1,84 @@
+% Improved heurstic relay selection at each hop 
+function [ridx, rDel, rPdr] = DGMR_v3(QoS_th, Locations, Speed, refRelay, Ch_par, refDistance)
+%
+% Input: QoS_th -- SNR, Data rate, per-hop and e2e reliability, delay threshold
+%        Locations -- Locations of one-hop vehicles with index, has size
+%                     N x 3, first column is the index, rest are the
+%                     x and y locations. First row is the CH. Note that the
+%                     locations should be in ascending order by x-axis (1 col)
+%        Speed -- Speed of one-hop vehicles, of size N x 1
+%        refRelay -- Previous relay vehicle
+%        Ch_par -- Channel model parameters, per hop delay constant
+%        refDistance -- per-hop transmission upper and lower bound
+% 
+% Output: ridx -- relay index
+%         rDel 
+% 
+
+REL_th = QoS_th(4);
+DEL_th = QoS_th(5);
+
+loc = Locations;
+spd = Speed;
+ridx = refRelay;
+
+pkt = Ch_par(8); % Packet length in bit
+tau = Ch_par(9); % Delay constant
+
+d_min = refDistance(1);
+d_max = refDistance(2);
+
+loc_src = loc(1,2:end);
+spd_src = spd(1);
+
+loc_temp = loc(:,2:end) - loc_src; 
+% idx within reference distance
+rSpace = find(loc_temp(:,1) >= d_min & loc_temp <= d_max);
+if isempty(rSpace)
+    disp('error1: No candidate, add hops');
+    rPick = find(loc_temp(:,1) < d_min, 1, 'last');
+    ridx = loc(rPick, 1);
+    tarloc = loc(rPick, 2:end);
+    dist = norm(tarloc);
+    [pdr, rate] = linkCal(dist, Ch_par);
+else
+    if rSpace == find(loc(:,1) == ridx) % previous relay within rSpace
+        tarloc = loc_temp(find(loc(:,1) == ridx), 2:end); % relative location of ref vehicle
+        tarspd = spd(find(loc(:,1) == ridx), 2:end);
+        tarResTime = myLinklife(loc_src, spd_src, tarloc, tarspd, refDistance);
+        % Compute average residual link lifetime of relay candidates
+        resTime = zeros(length(rSpace),1);
+        for k = 1:length(rSpace)
+            rl = loc_temp(rSpace(k));
+            rs = spd(rSpace(k));
+            resTime(k) = myLinklife(loc_src, spd_src, rl, rs, refDistance);
+        end
+        avgTime = sum(resTime)/length(rSpace);
+        if tarResTime < avgTime
+            disp('ResTime out! Adjust relay');
+            [~, rPick] = max(resTime);
+            ridx = loc(rPick,1);
+            tarloc = loc(rPick, 2:end);
+        else
+            ridx = ridx;
+        end
+        dist = norm(tarloc);
+        [pdr, rate] = linkCal(dist, Ch_par);
+            
+    else
+        disp('Relay out! Adjust relay');
+        for k = 1:length(rSpace)
+            rl = loc_temp(rSpace(k));
+            rs = spd(rSpace(k));
+            resTime(k) = myLinklife(loc_src, spd_src, rl, rs, refDistance);
+        end
+        [~, rPick] = max(resTime);
+        ridx = loc(rPick,1);
+        tarloc = loc(rPick, 2:end);
+        dist = norm(tarloc);
+        [pdr, rate] = linkCal(dist, Ch_par);
+    end
+end
+
+
+

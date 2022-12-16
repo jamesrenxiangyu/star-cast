@@ -1,0 +1,14 @@
+Loading net-file from 'highway.net.xml' ... done (0ms).
+Loading done.
+Simulation version 1.12.0 started with time: 0.00
+Simulation ended at time: 1825.00
+Reason: All vehicles have left the simulation.
+Performance: 
+ Duration: 2.02s
+ Real time factor: 903.018
+ UPS: 77386.937160
+Vehicles: 
+ Inserted: 111
+ Running: 0
+ Waiting: 0
+
