@@ -1,5 +1,5 @@
-% Cluster vehicles by inter-vehicle distance, cluster size constraints
-function [Num_Cluster, Cluster_loc, Cluster_head] = myClusterV2(locations, speed, time, distRef, covRef, mode)
+% Cluster vehicles by inter-vehicle distance and kmeans
+function [Num_Cluster, Cluster_loc, Cluster_head, Cluster_spd] = myClusterV2(locations, speed, time, distRef, covRef, mode)
 %%
 % Input:    locations: node locations
 %           speed: node speed
@@ -14,19 +14,19 @@ function [Num_Cluster, Cluster_loc, Cluster_head] = myClusterV2(locations, speed
 
 
 
-l = locations; % n node locations array of size m x n, m = 1, 2
-s = speed'; % speed of each node, put in 1 x n shape
+l = locations(:, 2:3)'; % n node locations array of size m x n, m = 1, 2
+s = speed(:,2)'; % speed of each node, put in 1 x n shape
 src_loc = l(1,1); % assume first vehicle as source
 d = distTable(l(1,:), src_loc); % compute the distance between adjacent vehicles
-dmax = distRef; % maximum per-hop transmission distance
+dmax = distRef(2); % maximum per-hop transmission distance
 cmax = covRef; % maximum coverage of a cluster
 
 % init paramters
 fsrc = 1;  % source vehilce flag
 fend = 1; % end vehilce flag
-Num_Cluster = 0;
 Cluster_ind = []; % final cluster member index
 Cluster_loc = []; % final cluster member locations
+Cluster_spd = []; % final cluster member speed
 Cluster_head = []; % final cluster member locations
 CH_ind = []; % final cluster head index
 % first-round cluster
@@ -55,7 +55,7 @@ for i = 1: size(d,1)
         fend = i;
         temp1 = l(:, fsrc:fend);
         temp2 = s(:,fsrc:fend); % speed of vehilces
-        tempMem(:, 1:size(temp1,1)) = temp1;
+        tempMem(:, 1:size(temp1,2)) = temp1;
         tempSpd(:, 1:size(temp1,2)) = temp2;
         clu_out_loc = [clu_out_loc; tempMem];
         clu_out_spd = [clu_out_spd; tempSpd];
@@ -72,8 +72,11 @@ for j = 1 : Num_Cluster
     if flag1 == 1 % if single member in a cluster
         tempMem = zeros(2, size(l,2)+1);
         tempMem(:,1) = tempLoc;
+        tempspd = zeros(1, size(l,2)+1);
+        tempspd(:,1) = tempSpd;
         Cluster_loc = [Cluster_loc; tempMem];
         Cluster_head = [Cluster_head, tempLoc];
+        Cluster_spd = [Cluster_spd; tempspd];
         continue;
     end
     clu_cov = clu_out_loc(2*j-1, flag1) - clu_out_loc(2*j-1, 1);
@@ -82,40 +85,19 @@ for j = 1 : Num_Cluster
         [cidx, chead] = myKMeans(split_num, tempLoc, tempSpd, time, mode);
         % cluster member locations container
         tempMem = zeros(2*split_num, size(l,2)+1);
+        tempspd = zeros(split_num, size(l,2)+1);
         for c = 1:split_num
             mem = tempLoc(:, cidx == c);
             tempMem(2*c-1: 2*c, 1:size(mem,2)) = mem;
+            ss = tempSpd(:, cidx == c);
+            tempspd(c, 1:size(ss,2)) = ss;
         end
         Cluster_loc = [Cluster_loc; tempMem];
         Cluster_head = [Cluster_head, chead];
+        Cluster_spd = [Cluster_spd; tempspd];
     else
         warning("No members. Check your inputs")
     end
 end
 
 Num_Cluster = size(Cluster_head, 2);
-
-                
-            
-        
-                
-                
-            
-            
-        
-        
-            
-            
-        
-    
-    
-    
-    
-    
-    
-        
-        
-        
-        
-        
-    

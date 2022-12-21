@@ -3,13 +3,13 @@
 <vType id= "Car" departSpeed="25.0" departLane="free" accel="3.000000" decel="4.5000000" sigma="0.500000" maxSpeed = "35.100" length="3.000000" color="0,255,0" vClass="passenger" minGap="10" tau="1"/>
 <vType id= "FastCar" departSpeed="30.0" departLane="free" accel="4.000000" decel="5.000000" sigma="0.500000" maxSpeed = "40.550000" length="3.000000" color="0,0,255" vClass="passenger" minGap="10" tau="1"/>
 <route id="Straight" edges= "Lane"/>
-<flow id="SlowCar" color="255,0,0"  begin="0" end="200" probability="0.1" type="Car">
+<flow id="SlowCar" color="255,0,0"  begin="0" end="200" probability="0.2" type="Car">
     <route edges="Lane"/>
 </flow>
-<flow id="Car" color="255,0,0"  begin="0" end="200" probability="0.3" type="Car">
+<flow id="Car" color="255,0,0"  begin="0" end="200" probability="0.8" type="Car">
     <route edges="Lane"/>
 </flow>
- <flow id="FastCar" color="255,0,255"  begin="0" end="200" probability="0.2" type="FastCar">
+ <flow id="FastCar" color="255,0,255"  begin="0" end="200" probability="0.5" type="FastCar">
     <route edges="Lane"/>
 </flow>
 <vehicle id= "Target" type="Car" depart="100" departLane="free" route="Straight"  color="255, 255, 255"/>

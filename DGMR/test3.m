@@ -5,38 +5,40 @@ clear; clc;
 close all;
 
 path = 'SUMO/';
-locfile = 'Locations.mat';
-mobfile = 'Speed.mat';
+file = 'sampledenseTrace.mat';
+% mobfile = 'Speed.mat';
 
-load([path locfile])
-load([path mobfile])
-
-% Reserve data with target vehicle (id=1)
-tar_id1 = find(Pos_x(:,1) == 1); % locate target vehicle
-tar_id2 = find(Pos_x(:,1) ~= 0, 1, 'Last'); % count total vehicle number
-tar_begin = find(Pos_x(tar_id1, 2:end) ~= 0, 1); % time target vehicle enters the network
-tar_end = find(Pos_x(tar_id1, :) ~= 0, 1, 'Last'); % time target vehicle exits the network
-
-% retrieve gloable network information over time involving target vehicle
-loc_x = [Pos_x(1:tar_id1, 1) Pos_x(1:tar_id1, tar_begin:tar_end)];
-loc_y = [Pos_y(1:tar_id1, 1) Pos_y(1:tar_id1, tar_begin:tar_end)];
-mob = [Speed(1:tar_id1, 1) Speed(1:tar_id1, tar_begin:tar_end)]; 
-
+load([path file])
 
 %% MBS sample vehicle mobility information 
+timeGap = 10;
+flag = 3;
+X = [Sloc_x(2:end, 1), Sloc_x(2:end, flag),  Sloc_y(2:end, flag), Smob(2:end, flag)];
+X = sortrows(X,2);
+loc = X(:, 1:3);
+spd = X(:, [1 4]);
 
-sampRate = 10; % sample data every 10s
-LOC_x = loc_x(:,1:sampRate:end);
-LOC_y = loc_y(:,1:sampRate:end);
-MOB = mob(:,1:sampRate:end);
-
-flag = 50;
-locRaw = [LOC_x(2:end, flag), LOC_y(2:end, flag)]; % Use flag's timestep
-loc = sortrows(locRaw,1);
-spd = MOB(2:end, flag);
-% xmin = min(loc(:,1));
-floc = [LOC_x(2:end, flag+1), LOC_y(2:end, flag+1)]; % Test with next timestep
-floc = sortrows(floc,1);
+fX = [Sloc_x(2:end, 1), Sloc_x(2:end, flag+1),  Sloc_y(2:end, flag+1), Smob(2:end, flag+2)];
+fX = sortrows(fX,2);
+floc = fX(:, 1:3);
+fspd = fX(:, [1 4]);
+% %% Generate test data
+% timeGap = 10;
+% Vnum = 100;
+% cov_begin = 200;
+% cov_end = 5000;
+% 
+% Locations = [randi([cov_begin cov_end], [Vnum, 1]), 4*randi([0, 3], [Vnum, 1])];
+% Speed = randi([30 40], [Vnum, 1]);
+% Idx = 10 + (1:size(Locations,1))';
+% X = [Idx, Locations, Speed];
+% X = sortrows(X, 2);
+% loc = X(:, 1:3);
+% spd = X(:, [1 4]);
+% % CH_idx = Locations(round(Vnum/2),1);
+% % idx = [1 14 23 50 63 75 89 95];
+% % refRelay = Locations(idx,1);
+% 
 
 
 %% Network setting
@@ -77,8 +79,8 @@ end
 refDis = [dmin, dmax];
 
 %% Cluster network 
-mode = 1; % cluster algorithm mode
-[nCluster, Cluster_loc, Cluster_head] = myClusterV2(loc', spd, 10, disRef, covRef, 1);
+mode = 2; % cluster algorithm mode
+[nCluster, Cluster_loc, Cluster_head, Cluster_spd] = myClusterV2(loc, spd, timeGap, disRef, covRef, mode);
 
 % init cluster member and cluster head indices
 % Cluster_idx: member index, array of size K x N
@@ -86,21 +88,21 @@ Cluster_idx = zeros(nCluster, size(Cluster_loc,2));
 % CH_idx: CH index, array of size K x 1
 CH_idx = zeros(nCluster, 1);
 
-% % Visualize cluster results
-figure(9);
-for i = 1:size(Cluster_head,2)
-    temp = Cluster_loc(2*i-1:2*i, :);
-    ff = find(temp(1, 2:end) == 0, 1);
-    subplot(2,1,1)
-    scatter(temp(1, 1:ff), temp(2, 1:ff), 'o');
-    hold on;
-    scatter(Cluster_head(1,i), Cluster_head(2,i), 'kx', 'LineWidth', 1.5)
-end
-grid on;
-title("Kmeans with revised distance");
-subplot(2,1,2)
-scatter(floc(:,1), floc(:,2));
-grid on;
+%% Visualize cluster results
+% figure(9);
+% for i = 1:size(Cluster_head,2)
+%     temp = Cluster_loc(2*i-1:2*i, :);
+%     ff = find(temp(1, 2:end) == 0, 1);
+%     subplot(2,1,1)
+%     scatter(temp(1, 1:ff), temp(2, 1:ff), 'o');
+%     hold on;
+%     scatter(Cluster_head(1,i), Cluster_head(2,i), 'kx', 'LineWidth', 1.5)
+% end
+% grid on;
+% title("Kmeans with revised distance");
+% subplot(2,1,2)
+% scatter(floc(:,2), floc(:,3));
+% grid on;
 
 %% Routing algorithm
 % Set relay location container and performance metrics container
@@ -111,7 +113,7 @@ rel_con = zeros(NUM, 1); % store e2e reliability
 del_con = zeros(NUM, 1); % store e2e delay
 cos_con = zeros(NUM, 1); % store e2e cost
 idx_con = zeros(NUM, HOP_MAX); % store vehilce index of each relay per cluster
-
+rat_con = zeros(NUM, 1); % store minimum e2e rate
 % Select GPCA = 1 or LPCA = 0
 PCA = 1;
 
@@ -129,8 +131,8 @@ for i = 1:NUM
         rel = 1.0;
         delay = Cdelay;
         cost =  Ccost;
-        fidx = find(ismember(locRaw,dLoc','rows')) + 1;
-        indx = LOC_x(fidx,1);
+        fidx = find(ismember(loc(:,2:3), dLoc','rows'));
+        indx = loc(fidx,1);
         Cluster_idx(i,1:fg) = indx;
         CH_idx(i,1) = indx;
     else
@@ -139,12 +141,12 @@ for i = 1:NUM
         ch = Cluster_head(:, i);
         % retrieve member and CH indices
         for v = 1:fg
-            fidx = find(ismember(locRaw, Cluster_loc(2*i-1: 2*i, v)','rows')) + 1;
-            indx = LOC_x(fidx,1);
+            fidx = find(ismember(loc(:,2:3), Cluster_loc(2*i-1: 2*i, v)','rows'),1);
+            indx = loc(fidx,1);
             Cluster_idx(i,v) = indx;
-            hidx = find(ismember(locRaw, ch','rows')) + 1;
-            CH_idx(i,1) = LOC_x(hidx,1);
         end
+        hidx = find(ismember(loc(:,2:3), ch','rows'),1);
+        CH_idx(i,1) = loc(hidx,1);
             
         if isequal(Cluster_head(:,i), front) % CH is the front vehicle of the cluster
             ctype = 1;
@@ -169,7 +171,7 @@ for i = 1:NUM
             case 1
                 % Method 1 dijkstra.m
                 graph = myGraph(tempLoc, QoS_th, Ch_par, refDis);
-                [cost, rCan] = dijkstra(graph, 1, length(tempLoc)); % cost is a e2e weight cost
+                [~, rCan] = dijkstra(graph, 1, length(tempLoc)); % cost is a e2e weight cost
                 % Method 2 dijkstra_v2.m
     %             [g1, g2] = myGraph_v2(tempLoc, QoS_th, Ch_par, refDis);
     %             [cost, rCan] = dijkstra_v2(g1, g2, 1, length(tempLoc), QoS_th);
@@ -178,17 +180,18 @@ for i = 1:NUM
                 rel = prod(pdr);
                 delay = Cdelay + sum(Pkt./rate + Tau * ones(length(pdr),1)) * 1e3; % e2e delay
                 dLoc = Cluster_loc(2*i-1: 2*i, rCan);
-                cost = cost + Ccost;
+                cost = size(dLoc,2) + Ccost;
                 indx = zeros(1,length(rCan));
                 for v=1:size(dLoc,2)
-                    fidx = find(ismember(locRaw,dLoc(:,v)','rows')) + 1;
-                    indx(v) = LOC_x(fidx,1);
+                    fidx = find(ismember(loc(:,2:3),dLoc(:,v)','rows'),1);
+                    indx(v) = loc(fidx,1);
                 end
+                dRate = min(rate);
                 
             case 2
                 % Method 1 dijkstra.m
                 graph = myGraph(tempLoc, QoS_th, Ch_par, refDis);
-                [cost, rCan] = dijkstra(graph, 1, length(tempLoc)); % cost is a e2e weight cost
+                [~, rCan] = dijkstra(graph, 1, length(tempLoc)); % cost is a e2e weight cost
                 % Method 2 dijkstra_v2.m
     %             [g1, g2] = myGraph_v2(tempLoc, QoS_th, Ch_par, refDis);
     %             [cost, rCan] = dijkstra_v2(g1, g2, 1, length(tempLoc), QoS_th);
@@ -197,20 +200,25 @@ for i = 1:NUM
                 rel = prod(pdr);
                 delay = Cdelay + sum(Pkt./rate + Tau * ones(length(pdr),1)) * 1e3; % e2e delay
                 rCan = length(tempLoc)+1 - rCan; % reverse relay index
-                rCan = sort(rCan);
+%                 rCan = sort(rCan);
                 dLoc = Cluster_loc(2*i-1: 2*i, rCan);
-                cost = cost + Ccost;
                 indx = zeros(1,length(rCan));
+                cost = size(dLoc,2) + Ccost;
                 for v=1:size(dLoc,2)
-                    fidx = find(ismember(locRaw,dLoc(:,v)','rows')) + 1;
-                    indx(v) = LOC_x(fidx,1);
+                    fidx = find(ismember(loc(:,2:3),dLoc(:,v)','rows'),1);
+                    indx(v) = loc(fidx,1);
                 end
+                PP = [dLoc; indx]';
+                PP = sortrows(PP,1);
+                dLoc = PP(:,1:2)';
+                indx = PP(:,3)';
+                dRate = min(rate);
                 
             case 3
                 % Forward part
                  % Method 1 dijkstra.m
                 graph1 = myGraph(tempLoc1, QoS_th, Ch_par, refDis);
-                [cost1, rCan1] = dijkstra(graph1, 1, length(tempLoc1)); % cost is a e2e weight cost
+                [~, rCan1] = dijkstra(graph1, 1, length(tempLoc1)); % cost is a e2e weight cost
                 % Method 2 dijkstra_v2.m
     %             [g1, g2] = myGraph_v2(tempLoc1, QoS_th, Ch_par, refDis);
     %             [cost1, rCan1] = dijkstra_v2(g1, g2, 1, length(tempLoc1), QoS_th);
@@ -219,16 +227,17 @@ for i = 1:NUM
                 rel1 = prod(pdr1);
                 delay1 = Cdelay + sum(Pkt./rate1 + Tau * ones(length(pdr1),1)) * 1e3; % e2e delay
                 dLoc1 = Cluster_loc(2*i-1: 2*i, rCan1(2:end) + fch -1);
-                indx1 = zeros(1,length(rCan1));
+                indx1 = zeros(1,size(dLoc1,2));
+                cost1 = size(dLoc1,2);
                 for v=1:size(dLoc1,2)
-                    fidx = find(ismember(locRaw,dLoc1(:,v)','rows')) + 1;
-                    indx1(v) = LOC_x(fidx,1);
+                    fidx = find(ismember(loc(:,2:3),dLoc1(:,v)','rows'),1);
+                    indx1(v) = loc(fidx,1);
                 end
                 
                 % Backward part (involve CH)
                  % Method 1 dijkstra.m
                 graph2 = myGraph(tempLoc2, QoS_th, Ch_par, refDis);
-                [cost2, rCan2] = dijkstra(graph2, 1, length(tempLoc2)); % cost is a e2e weight cost
+                [~, rCan2] = dijkstra(graph2, 1, length(tempLoc2)); % cost is a e2e weight cost
                 % Method 2 dijkstra_v2.m
     %             [g1, g2] = myGraph_v2(tempLoc2, QoS_th, Ch_par, refDis);
     %             [cost2, rCan2] = dijkstra_v2(g1, g2, 1, length(tempLoc1), QoS_th);
@@ -238,10 +247,11 @@ for i = 1:NUM
                 delay2 = Cdelay + sum(Pkt./rate2 + Tau * ones(length(pdr2),1)) * 1e3; % e2e delay
                 rCan2 = length(tempLoc2)+1 - rCan2; % reverse relay index
                 dLoc2 = Cluster_loc(2*i-1: 2*i, rCan2);
-                indx2 = zeros(1,length(rCan2));
+                indx2 = zeros(1,size(dLoc2,2));
+                cost2 = size(dLoc2,2);
                 for v=1:size(dLoc2,2)
-                    fidx = find(ismember(locRaw,dLoc2(:,v)','rows')) + 1;
-                    indx2(v) = LOC_x(fidx,1);
+                    fidx = find(ismember(loc(:,2:3), dLoc2(:,v)','rows'),1);
+                    indx2(v) = loc(fidx,1);
                 end
                 
                 % Aggregate
@@ -250,6 +260,11 @@ for i = 1:NUM
                 rel = min(rel1, rel2);
                 cost = cost1 + cost2 + Ccost;
                 indx = [indx2, indx1];
+                PP = [dLoc; indx]';
+                PP = sortrows(PP,1);
+                dLoc = PP(:,1:2)';
+                indx = PP(:,3)';
+                dRate = min([rate1; rate2]);
         end
     end
     loc_con(2*i-1: 2*i, 1:size(dLoc,2)) = dLoc;
@@ -260,7 +275,8 @@ for i = 1:NUM
     end
     del_con(i,1) = delay;
     cos_con(i,1) = cost;
-    idx_con(i,1:size(indx,2)) = indx;
+    idx_con(i,1:length(indx)) = indx;  % relay indices
+    rat_con(i,1) = dRate;
 end
 
 
@@ -270,10 +286,21 @@ for j = 1:NUM
     jj = find(Cluster_loc(2*j-1, 2:end) == 0, 1);
     plot(linspace(Cluster_loc(2*j-1, 1), Cluster_loc(2*j-1, jj), length(Cluster_loc(2*j-1, 1:jj))), 'r-');
     hold on;
-    a = loc_con(2*j-1, 2:end);
+    a = Cluster_loc(2*j-1, 2:end); % Cluster members
     flag = find(a == 0, 1);
-    plot(loc_con(2*j-1,1: flag), '*');
-    hold on;
+    plot(Cluster_loc(2*j-1,1: flag), 'o');
+    hold on; 
+    b = find(loc_con(2*j-1, 2:end) == 0, 1); % Relay vehicles
+    if isempty(b)
+        b = length(loc_con(2*j-1,:));
+    end
+    for r = 1:b
+        flag = find(Cluster_loc(2*j-1,:) == loc_con(2*j-1,r));
+        plot(flag, loc_con(2*j-1,r), 'r*');
+        hold on;
+    end
+    flag = find(Cluster_loc(2*j-1,:) == Cluster_head(1,j));
+    plot(flag, Cluster_head(1,j), 'pentagram', 'MarkerSize', 10, 'LineWidth', 1.5);
 end
 
 figure(2);
@@ -288,3 +315,16 @@ bar(del_con);
 ylabel("Delay in (ms)");
 xlabel("Cluster number");
 title("E2E delay");
+
+figure(4);
+bar(rat_con);
+ylabel("Data rate in (bps)");
+xlabel("Cluster number");
+title("Minimum data rate");
+
+figure(5);
+bar(cos_con);
+ylabel("Cost");
+xlabel("Cluster number");
+title("Transmission cost");
+

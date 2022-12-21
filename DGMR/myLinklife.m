@@ -12,7 +12,13 @@ function reslinkTime = myLinklife(location, speed, rlocation, rspeed, refdistanc
 dmin = min(refdistance);
 dmax = max(refdistance);
 
-dv = rspeed - speed; % speed difference
+if rlocation(1,1) >= location(1,1) % forward transmission
+    f = 1;
+else % backward transmission
+    f = -1;
+end
+
+dv = f * (rspeed - speed); % speed difference
 temp = abs(rlocation - location); % location difference
 theta = atan(temp(2)/temp(1)); % angle between two vehicles in terms of pi
 if dv > 0

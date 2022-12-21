@@ -2,11 +2,11 @@
 clear; clc;
 
 path = 'SUMO/';
-cd(path)
-csvfile = [path, 'mobility.csv'];
-[Pos_x, Pos_y, Speed] = myDataGet(csvfile);
-save('Locations.mat', 'Pos_x', 'Pos_y');
-save('Speed.mat', 'Speed');
+% cd(path)
+filename = 'denseTrace';
+csvfile = [path, strcat(filename, '.csv')];
+[Pos_x, Pos_y, Speed] = myDataGet(csvfile, 300);
+save(strcat(filename, '.mat'), 'Pos_x', 'Pos_y','Speed');
 
 
 % sample data every 10s
@@ -27,5 +27,4 @@ mob = [Speed(1:tar_id1, 1) Speed(1:tar_id1, tar_begin:tar_end)];
 Sloc_x = loc_x(:,1:sampRate:end);
 Sloc_y = loc_y(:,1:sampRate:end);
 Smob = mob(:,1:sampRate:end);
-save('SampledLocations.mat', 'Sloc_x', 'Sloc_y');
-save('SampledSpeed.mat', 'Smob');
+save(strcat('sample', filename, '.mat'), 'Sloc_x', 'Sloc_y', 'Smob');

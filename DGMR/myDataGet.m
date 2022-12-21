@@ -1,12 +1,13 @@
-function [Location_x, Location_y, Speed] = myDataGet(csvfile)
+function [Location_x, Location_y, Speed] = myDataGet(csvfile, numVehicle)
 opts = detectImportOptions(csvfile);
 % select columns in the .csv file for process
 % "time, v_id (type+id), speed, x_loc, y_loc"
 opts.SelectedVariableNames = [1, 3, 7, 9, 10];
 data = readtable(csvfile, opts);
 %  dictionary to store vehicle id
-types = ["V_id"]; flag = 0;
-num_vehicle = 200;
+types = ["V_id"]; 
+flag = 0;
+num_vehicle = numVehicle;
 
 max_time = data{end,1};
 Location_x = zeros(num_vehicle + 1, max_time + 1);
@@ -17,7 +18,7 @@ Location_y(1, :) = (0:max_time);
 Speed = zeros(num_vehicle + 1, max_time + 1);
 Speed(1, :) = (0:max_time);
 
-for i = 1: size(data,1)
+for i = 2: size(data,1)
     if isnan(data{i,3})
         continue;
     end
@@ -64,7 +65,7 @@ for i = 1: size(data,1)
 %         temp_loc = data{i,3};
 %         temp_spe = data{i,4};
 %     end
-    temp_loc_x = data{i,4} * 10;
+    temp_loc_x = data{i,4};
     temp_loc_y = data{i,5};
     temp_spe = data{i,3};
     Location_x(flag, tempTime + 1) = temp_loc_x;
