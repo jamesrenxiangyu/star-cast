@@ -12,6 +12,7 @@ F = Ch_par(7); % Radio frequency in GHz
 Pkt = Ch_par(8); % Packet length in bit
 
 
+
 D0 = 1000; % Reference distance
 
 % Free space path loss model in dB
