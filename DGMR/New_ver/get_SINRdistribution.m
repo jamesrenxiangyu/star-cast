@@ -53,6 +53,7 @@ function [ SINR , PDF_SINR ] =  get_SINRdistribution( Pr_dBm_avg , Pi_dBm_avg , 
     % Adapt the range of the x axes to the values provided by the xcorr function:
     SINR = min(x)*2:step_dB:max(x)*2;
 
+
 end
 
 

@@ -34,6 +34,6 @@ function [ FER_avg ] = get_FER ( Eb_No , PDF_Eb_No , step_dB)
 
     FER_interp = interp1(vector_Eb_No_paper , vector_FER_paper , Eb_No , 'linear');    % Interpolated values from FER vs Eb/No curve
 
-    FER_avg = 0.8 * PDF_Eb_No * FER_interp' * step_dB;   % Provides the average FER. 
+    FER_avg =  PDF_Eb_No * FER_interp' * step_dB;   % Provides the average FER. 
 
 end

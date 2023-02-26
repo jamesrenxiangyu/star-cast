@@ -1,51 +1,105 @@
-close all;
-clear; clc;
+%% main: Test with SUMO data
+close all; clear; clc;
 
+%% Channel Parameters Setting
 % QoS settings
 DEL_th = 20e-3; % E2E delay in sec
-SNR_th = 18; % SNR in dB
-RAT_th = 20e6; % Data rate in bps
-PDR_th = 1 - 1e-4; % Per-hop reliability
-REL_th = 1 - 1e-3; % End-to-end reliability
+SNR_th = 20; % SNR in dB
+RAT_th = 80e6; % Data rate in bps
+REL_th = 1 - 1e-2; % End-to-end reliability
+COV_th = 500; % Coverage requirement in m
 
-QoS_th = [SNR_th; RAT_th; PDR_th; REL_th; DEL_th];
-
-% Traffic settings
-Coverage = 5000;   % Coverage in meters
-Veh_num = 100; % Number of vehicles on road
-Lane_num = 3; % Number of lanes
-% Traffic locations
-Loc = 0;
-
-s = RandStream('dsfmt19937', 'Seed', 3);
-for i = 1:Lane_num
-   loc = randi(s,[0 Coverage], 1, Veh_num); % Vehicle locations
-   Loc = [Loc, loc];
-end
-Loc = sort(Loc);
-
-Loc_test = (1:20:1000);
+QoS_th = [SNR_th; RAT_th; REL_th; DEL_th; COV_th];
 
 % Channel settings
 Pkt = 1600 * 8; % packet size
-B = 5e6; % bandwidth in Hz
+B = 10e6; % bandwidth in Hz
 M = 4; % M-PSK
 F = 5e9; % Radio frequency 5GHz
-alpha = 3.2; % Path loss component
-Xg = 3.5; % Shadowing component in dB
-N0 = 1e-8; % Noise power level in mW
+alpha = 3.6; % Path loss component
+Xg = 3.7; % Shadowing component in dB
+N0 = -95; % Background noise in 10 MHz assuming a noise figure of 9dB (dBm)   
 Pt_max = 23; % in mW;
 Tau = 2e-3; % Delay constant in sec
+beta = 0.06; % beta: traffic density in veh/m. Values tested: 0.06 and 0.12 veh/m
+lambda = 10; % lambda: packet transmission frequency in Hz. Values tested: 10 and 25 Hz.
 
-Ch_par = [M, Pt_max, B, alpha, N0, Xg, F, Pkt, Tau];
+Ch_par = [M, Pt_max, B, alpha, N0, Xg, F, Pkt, Tau, beta, lambda];
 
-% Initial Reference distance
-dSNR = distSNR(SNR_th, M, Pt_max, alpha, N0, Xg, F);
-dRate = distRate(RAT_th, B, M, Pt_max, alpha, N0, Xg, F);
-% disRef = max(dSNR, dRate);
-dmax = min(dSNR, dRate);
-covRef = 0.8 * dmax * (DEL_th/(Tau+1e-3));
-dDel = covRef * (Pkt + Tau * RAT_th)/(DEL_th * RAT_th);
+%% Network Settings
+
+% Read topology
+Coverage = 5000;   % Coverage in meters
+Veh_max = 300; % Number of vehicles on road
+Lane_num = 4; % Number of lanes
+
+path = 'New_ver/SUMO/';
+filename = 'denseTrace';
+tarfile = strcat(filename, '.mat');
+files = dir(path);
+if ~isempty(dir(strcat(path, tarfile)))
+    load(tarfile)
+else
+    csvfile = [path, strcat(filename, '.csv')];
+    input_data = get_myData(csvfile);
+    save(strcat(path, tarfile), 'input_data');
+end
+
+input_data = input_data(cell2mat(input_data(:,end)) == 1, :);
+
+
+% Generate test data
+% Loc = [];
+% % s = RandStream('dsfmt19937', 'Seed', 3);
+% for i = 1:Lane_num
+%    Veh_num = randi([floor(Veh_max/2), Veh_max], 1);
+%    loc_y = 4.5 * i * ones(Veh_num, 1); % Vehicle y locations
+%    loc_x = randperm(Coverage, Veh_num); % Vehicle x locations
+%    spd = 25 + 10 * rand([Veh_num, 1]); % Vehicle speed
+%    loc = [loc_x', loc_y, spd];
+%    Loc = [Loc; loc];
+% end
+% Loc = sortrows(Loc);
+% Loc = [(1:size(Loc,1))', Loc];
+
+src_id = 1;
+
+
+%% Set data preferences
+
+init_time = 80;
+timeGap = 5;
+
+% V2N2V delay metric
+Cdelay = 2 * Pkt/RAT_th * 1e3; % in ms
+Ccost = 2 * 5;
+Vcost = 2 * 1;
+
+
+%% Network table
+% Output: dist_table structure
+% layer_id, v_idx, v_loc, v_spd, dist
+Loc = cell2mat(input_data{init_time,2}(2:end,:));
+
+Loc_table = get_distTable(Loc);
+
+
+% Network density
+dens_th = 30; % inter-vehicle distance
+dens = mean(cell2mat(Loc_table(:,end)));
+if dens > dens_th
+    flag_dens = 0; % dense network
+else
+    flag_dens = 1; % sparse network
+end
+ 
+
+%% Reference Distance Calculation
+dis_snr = get_SNRDist(QoS_th, Ch_par, flag_dens);
+dis_rate = get_RateDist(QoS_th, Ch_par, flag_dens);
+
+dmax = min(dis_snr, dis_rate);
+dDel = COV_th * (Pkt + Tau * RAT_th)/(DEL_th * RAT_th);
 dmin = dDel;
 
 if dmin > dmax
@@ -53,88 +107,136 @@ if dmin > dmax
 end
 refDis = [dmin, dmax];
 
-% test
-% [rCan, rPDR, rRATE, rRel] = DGMR_v2(QoS_th, Loc_test, Loc_test(end), Ch_par, refDis);
+%% Cluster network 
+sampleTime = timeGap;
+refDistance = dmin;
+clusterMode = 1; % use revised kmeans
+
+[nCluster, Cluster] = get_Cluster(Loc_table, sampleTime, refDistance, COV_th, clusterMode, src_id);
+
+% % visualize clusters
+% for j = 2:nCluster
+%     % visualize relay locations per cluster
+%     figure(1)
+%     relay_loc = Cluster{j,1};
+%     plot(relay_loc(:,2), relay_loc(:,3), 'o');
+%     CH_loc = Cluster{j,2};
+%     plot(CH_loc(2), CH_loc(3), '*', 'MarkerSize', 10, 'LineWidth', 2.0);
+%     hold on;
+% end
+
+%% GPCA Routing algorithm
+NUM = nCluster -1; % total number of clusters
+
+% Output: result_con contains:
+%        Relays (cell): v_id, loc_x, loc_y, spd; 
+%        Delay: per-hop delay, end-to-end delay (first hop delay V2N2V); 
+%        Reliability: per-hop rel, end-to-end rel (first hop reliability V2N2V); 
+%        Cost: per-hop cost, end-to-end cost (first hop cost V2N2V); 
+
+result_con_gpca = get_GPCA(Cluster, NUM, Ch_par, QoS_th, refDis, src_id);
 
 
-% Cluster network 
-[nCluster, Cluster_ind, Cluster_loc] = myCluster(Loc', dmax, covRef);
 
-% Select GPCA = 1 or LPCA = 0
-PCA = 1;
+%% LPCA Routing algorithm
 
-% Set relay location container and performance metrics container
-NUM = nCluster;
-HOP_MAX = ceil(DEL_th/Tau); % max number of hops per cluster
-loc_con = zeros(NUM, HOP_MAX); % store lcoations of each relay per cluster
-rel_con = zeros(NUM, 1); % store e2e reliability
-del_con = zeros(NUM, 1); % store e2e delay
-cos_con = zeros(NUM, 1); % store e2e cost
+% result_con_lpca = get_LPCA(input_data, result_con_gpca, Cluster, NUM, Ch_par, QoS_th, refDis, src_id, timeGap, init_time);
 
-% Relay selection for each cluster
-for i =1: nCluster
-    fg = find(Cluster_loc(i, 2:end) == 0, 1);
-    tempLoc = Cluster_loc(i, 1:fg) - Cluster_loc(i, 1); % scalarize location of each cluster
-    tempCov = Cluster_loc(i, fg) - Cluster_loc(i, 1);
+result_NPCA = get_NPCA(input_data, result_con_gpca, Cluster, NUM, Ch_par, QoS_th, refDis, src_id, timeGap, init_time);
+
+%% Results visualization
+for j = 2:NUM
     
-    % PCA selection
-    if PCA == 1
-        % Use logarithm-weight to find the shortest path
-        graph = myGraph(tempLoc, QoS_th, Ch_par, refDis);
-        [cost, rCan] = dijkstra(graph, 1, length(tempLoc));
-        % Use modified Dijkstra (filter out unavailable path wrt e2e reliability)
-%         [g1, g2] = myGraph_v2(tempLoc, QoS_th, Ch_par, refDis);
-%         [cost, rCan] = dijkstra_v2(g1, g2, 1, length(tempLoc), QoS_th);
-        dTable = distTable(tempLoc(rCan(2:end)), tempLoc(rCan(1)));
-        dLoc = Cluster_loc(i,1) + tempLoc(rCan);
-        [pdr, rate] = linkCal(dTable, Ch_par);
-        rel = prod(pdr);
-        delay = sum(Pkt./rate + Tau * ones(length(pdr),1)) * 1e3; % e2e delay
-    else
-        % DGMR-LPCA
-        [rCan, rPDR, rRATE, rRel] = DGMR_v2(QoS_th, tempLoc, tempCov, Ch_par, refDis);
-        dLoc = [Cluster_loc(i,1); Cluster_loc(i,1) + rCan]';
-        rel = rRel; % e2e reliability
-        delay = sum(Pkt./rRATE + Tau * ones(size(rRATE,1),1)) * 1e3; % e2e delay in ms
-        cost = 0;
+    % visualize relay locations per cluster
+    figure(1)
+    relay_loc = Cluster{j,1};
+    plot(relay_loc(:,2), relay_loc(:,3), 'o');
+    CH_loc = Cluster{j,2};
+    plot(CH_loc(2), CH_loc(3), '*', 'MarkerSize', 10, 'LineWidth', 2.0);
+    hold on;
+    
+    % visualize e2e delay per cluster
+    figure(2)
+    relay_delay = result_con{j,2};
+    % delete empty cell
+    relay_delay = relay_delay(~cellfun(@isempty, relay_delay(:,1)), :);
+    temp_relay_delay = 0;
+    for clu = 1:size(relay_delay, 1)
+        % use maximum e2e delay of front and back transmission
+        temp_relay_delay = max(temp_relay_delay, relay_delay{clu,1}(end));
     end
-    loc_con(i,1:length(dLoc)) = dLoc;
-    rel_con(i,1) = rel;
-    del_con(i,1) = delay;
-    cos_con(i,1) = cost;
+    bar(j, temp_relay_delay);
+    hold on;
+    
+    % visualize e2e reliability per cluster
+    figure(3)
+    relay_rel = result_con{j,3};
+    % delete empty cell
+    relay_rel = relay_rel(~cellfun(@isempty, relay_rel(:,1)), :);
+    temp_relay_rel = 1;
+    for clu = 1:size(relay_rel, 1)
+        % use minimum e2e reliability of front and back transmission
+        temp_relay_rel = min(temp_relay_rel, relay_rel{clu,1}(end));
+    end
+    bar(j, temp_relay_rel);
+    hold on;
+    
+    % visualize e2e throughput per cluster
+    figure(4)
+    relay_th = result_con{j,4};
+    % delete empty cell
+    relay_th = relay_th(~cellfun(@isempty, relay_th(:,1)), :);
+    temp_relay_th = inf;
+    for clu = 1:size(relay_th, 1)
+        % use minimum e2e throughput of front and back transmission
+        temp_relay_th_temp = min(relay_th{clu,1}(:));
+        temp_relay_th = min(temp_relay_th, temp_relay_th_temp);
+    end
+    bar(j, temp_relay_th);
+    hold on;
+    
+    % visualize e2e cost per cluster
+    figure(5)
+    relay_cost = result_con{j,5};
+    temp_relay_delay = 0;
+    for clu = 1:size(relay_delay, 1)
+        % use aggregated e2e cost of front and back transmission
+        temp_relay_delay = temp_relay_delay + relay_delay{clu,1}(end);
+    end
+    % remove redudant V2N2V cost
+    temp_relay_delay = temp_relay_delay - (clu-1) * Cdelay;
+    bar(j, temp_relay_delay);
+    hold on;
+    
 end
 
-
-figure(1)
-for j = 1:NUM
-    jj = find(loc_con(j, 2:end) == 0, 1);
-    if isempty(jj)
-        jj = size(loc_con,2);
-    end
-    plot(linspace(loc_con(j, 1), loc_con(j, jj), length(loc_con(j, 1:jj))), 'r-');
-    hold on;
-    plot(loc_con(j,1: jj), '*');
-    hold on;
-end
-
-
+figure(1);
+ylabel("y-axis (m)");
+xlabel("x-axis (m)");
+grid on;
+ylim([0,20]);
 
 figure(2);
-bar(rel_con);
-ylim([REL_th 1]);
-ylabel("Probability");
+ylabel("E2e Delay (ms)");
 xlabel("Cluster number");
-title("E2E relibility");
+xticks(0:NUM)
+grid on;
 
 figure(3);
-bar(del_con);
-ylabel("Delay in (ms)");
+ylabel("Reliability");
 xlabel("Cluster number");
-title("E2E delay");
+ylim([0.9,1]);
+xticks(0:NUM);
+grid on;
 
+figure(4);
+ylabel("E2E throughput");
+xlabel("Cluster number");
+xticks(0:NUM);
+grid on;
 
-
-
- 
-
-
+figure(5);
+ylabel("E2E Cost");
+xlabel("Cluster number");
+xticks(0:NUM);
+grid on;

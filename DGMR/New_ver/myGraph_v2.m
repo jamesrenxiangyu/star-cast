@@ -2,8 +2,11 @@
 % Graph2 - use pdr as edge weight
 function [Graph1, Graph2] = myGraph_v2(Locations, QoS_th, Ch_par, refDistance)
 
+RAT_th = QoS_th(2);
+PDR_th = QoS_th(3);
 REL_th = QoS_th(4);
 DEL_th = QoS_th(5);
+
 
 pkt = Ch_par(8); % Packet length in bit
 tau = Ch_par(9); % Delay constant

@@ -1,11 +1,11 @@
-%% Test module for linkCal
+%% Test linkCal and pdr_cal module
 close all; clear; clc;
 
 %% Network setting
 % QoS settings
 DEL_th = 20e-3; % E2E delay in sec
 SNR_th = 20; % SNR in dB
-RAT_th = 20e6; % Data rate in bps
+RAT_th = 100e6; % Data rate in bps
 PDR_th = 1 - 1e-4; % Per-hop reliability
 REL_th = 1 - 1e-3; % End-to-end reliability
 
@@ -27,9 +27,14 @@ lambda = 10; % lambda: packet transmission frequency in Hz. Values tested: 10 an
 Ch_par = [M, Pt_max, B, alpha, N0, Xg, F, Pkt, Tau, beta, lambda];
 
 %%
-Distance = (50:10:120);
-[p1 r1] = linkCal(Distance, Ch_par, RAT_th)
+Distance = (50:10:200);
+[p1, r1, snr] = get_linkCal(Distance, Ch_par, RAT_th);
 
-pdr = pdr_cal(Ch_par, RAT_th, Distance)
+% pdr = pdr_cal(Ch_par, RAT_th, Distance);
 
-plot(Distance, PDR)
+figure(1)
+plot(Distance, p1);
+figure(2)
+plot(Distance, snr);
+figure(3)
+plot(Distance, r1);
